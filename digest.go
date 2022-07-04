@@ -16,23 +16,23 @@ const (
 )
 
 type DigestTransport struct {
-	username	string
-	password	string
-	transport	http.RoundTripper
-	authData	*authData
+	username    string
+	password    string
+	transport   http.RoundTripper
+	authData    *authData
 }
 
 type authData struct {
-	info 		authInfo
-	response 	string
+	info        authInfo
+	response    string
 }
 
 type authInfo struct {
-	algorithm	string
-	realm		string
-	nonce		string
-	opaque		string
-	qop			string
+	algorithm   string
+	realm       string
+	nonce       string
+	opaque      string
+	qop         string
 }
 
 func NewDigestTransport(username, password string,
