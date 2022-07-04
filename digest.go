@@ -1,6 +1,8 @@
 package httpdigest
 
 import (
+	"crypto/md5"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http"
@@ -10,12 +12,19 @@ import (
 const (
 	wwwAuthenticateHeader = "WWW-Authenticate"
 	algorithmMD5 = "MD5"
+	qopAuth = "AUTH"
 )
 
 type DigestTransport struct {
 	username	string
 	password	string
 	transport	http.RoundTripper
+	authData	*authData
+}
+
+type authData struct {
+	info 		authInfo
+	response 	string
 }
 
 type authInfo struct {
@@ -36,37 +45,41 @@ func NewDigestTransport(username, password string,
 	}
 }
 
-func (dt *DigestTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	resp, err := dt.transport.RoundTrip(req)
-	if err != nil {
-		return nil, err
+func (d *DigestTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	authReq := *req
+
+	if d.authData == nil {
+		authResp, err := d.transport.RoundTrip(&authReq)
+		if err != nil {
+			return nil, err
+		}
+
+		if authResp.StatusCode != 401 {
+			return authResp, nil
+		}
+
+		if authResp.Body != nil {
+			defer authResp.Body.Close()
+		}
+
+		authInfo, err := parseAuthInfo(authResp.Header)
+		if err != nil {
+			return nil, err
+		}
+
+		authData := calculateAuthValues(req, d, authInfo)
+		d.authData = &authData
 	}
 
-	if resp.StatusCode != 401 {
-		return resp, nil
-	}
+	assignAuthHeaders(req, d)
 
-	if resp.Body != nil {
-		defer resp.Body.Close()
-	}
-
-	authInfo, err := parseAuthInfo(resp.Header)
-	if err != nil {
-		return nil, err
-	}
-
-	fmt.Println(authInfo)
-
-	authreq := &http.Request{}
-	*authreq = *req
-
-	return nil, errors.New("not implemented yet")
+	return d.transport.RoundTrip(req)
 }
 
-func parseAuthInfo(h http.Header) (*authInfo, error) {
+func parseAuthInfo(h http.Header) (authInfo, error) {
 	values, ok := h[http.CanonicalHeaderKey(wwwAuthenticateHeader)]
 	if !ok || len(values) < 1 {
-		return nil, fmt.Errorf("could not find %s header", wwwAuthenticateHeader)
+		return authInfo{}, fmt.Errorf("could not find %s header", wwwAuthenticateHeader)
 	}
 
 	value := values[0][len("DIGEST "):]
@@ -88,32 +101,34 @@ func parseAuthInfo(h http.Header) (*authInfo, error) {
 
 	algorithm, ok := tokenMap["ALGORITHM"]
 	if ok && strings.ToUpper(algorithm) != algorithmMD5 {
-		return nil, fmt.Errorf("not supported algorithm %s", algorithm)
-	} else if !ok {
+		return authInfo{}, fmt.Errorf("not supported algorithm %s", algorithm)
+	} else {
 		algorithm = algorithmMD5
 	}
 
 	realm, ok := tokenMap["REALM"]
 	if !ok {
-		return nil, errors.New("no realm specified")
+		return authInfo{}, errors.New("no realm specified")
 	}
 
 	nonce, ok := tokenMap["NONCE"]
 	if !ok {
-		return nil, errors.New("no nonce specified")
+		return authInfo{}, errors.New("no nonce specified")
 	}
 
 	opaque, ok := tokenMap["OPAQUE"]
 	if !ok {
-		return nil, errors.New("no opaque specified")
+		return authInfo{}, errors.New("no opaque specified")
 	}
 
 	qop, ok := tokenMap["QOP"]
 	if !ok {
-		return nil, errors.New("no qop specified")
+		return authInfo{}, errors.New("no qop specified")
+	} else if strings.ToUpper(qop) != qopAuth {
+		return authInfo{}, fmt.Errorf("unsupported qop type: %s", qop)
 	}
 
-	result := &authInfo{
+	result := authInfo{
 		algorithm: algorithm,
 		realm: realm,
 		nonce: nonce,
@@ -122,4 +137,53 @@ func parseAuthInfo(h http.Header) (*authInfo, error) {
 	}
 
 	return result, nil
+}
+
+func calculateAuthValues(req *http.Request, d *DigestTransport, ai authInfo) authData {
+	ha1 := computeHA1(d.username, d.password, ai.realm)
+	ha2 := computeHA2(req.Method, req.URL.Path)
+	response := computeResponse(ha1, ha2, ai.nonce)
+
+	return authData{
+		info: ai,
+		response: response,
+	}
+}
+
+func computeHA1(username, password, realm string) string {
+	return computeMD5Hash(username, realm, password)
+}
+
+func computeHA2(method, digestURI string) string {
+	return computeMD5Hash(strings.ToUpper(method), digestURI)
+}
+
+func computeResponse(ha1, ha2, nonce string) string {
+	return computeMD5Hash(ha1, nonce, ha2)
+}
+
+func computeMD5Hash(args ...string) string {
+	s := ""
+	for _, x := range args {
+		if s == "" {
+			s = x
+		} else {
+			s = fmt.Sprintf("%s:%s", s, x)
+		}
+	}
+
+	hash := md5.Sum([]byte(s))
+	return hex.EncodeToString(hash[:])
+}
+
+func assignAuthHeaders(req *http.Request, d *DigestTransport) {
+	if _, ok := req.Header["Authorization"]; ok {
+		return
+	}
+
+	headerTemplate := "Digest username=\"%s\", realm=\"%s\", nonce=\"%s\", uri=\"%s\",response=\"%s\""
+	header := fmt.Sprintf(headerTemplate, d.username, d.authData.info.realm,
+		d.authData.info.nonce, req.URL.Path, d.authData.response)
+
+	req.Header.Add("Authorization", header)
 }
