@@ -8,9 +8,9 @@ import (
 
 const (
 	urlFormat = "http://httpbin.org/digest-auth/auth/%s/%s"
-	username = "testuser"
-	password = "testpassword"
-	times = 2
+	username  = "testuser"
+	password  = "testpassword"
+	times     = 2
 )
 
 func TestSuccessAuth(t *testing.T) {
@@ -93,7 +93,9 @@ func TestSuccessAuthMultipleDifferentRequest(t *testing.T) {
 }
 
 func TestNonSuccessAuth(t *testing.T) {
-	transport := NewDigestTransport(username, password + "X", http.DefaultTransport)
+	wrongPassword := password + "X"
+
+	transport := NewDigestTransport(username, wrongPassword, http.DefaultTransport)
 	client := &http.Client{
 		Transport: transport,
 	}

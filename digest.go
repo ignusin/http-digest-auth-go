@@ -11,36 +11,36 @@ import (
 
 const (
 	wwwAuthenticateHeader = "WWW-Authenticate"
-	algorithmMD5 = "MD5"
-	qopAuth = "AUTH"
+	algorithmMD5          = "MD5"
+	qopAuth               = "AUTH"
 )
 
 type DigestTransport struct {
-	username    string
-	password    string
-	transport   http.RoundTripper
-	authData    *authData
+	username  string
+	password  string
+	transport http.RoundTripper
+	authData  *authData
 }
 
 type authData struct {
-	info        authInfo
-	response    string
+	info     authInfo
+	response string
 }
 
 type authInfo struct {
-	algorithm   string
-	realm       string
-	nonce       string
-	opaque      string
-	qop         string
+	algorithm string
+	realm     string
+	nonce     string
+	opaque    string
+	qop       string
 }
 
 func NewDigestTransport(username, password string,
 	transport http.RoundTripper) *DigestTransport {
-	
+
 	return &DigestTransport{
-		username: username,
-		password: password,
+		username:  username,
+		password:  password,
 		transport: transport,
 	}
 }
@@ -83,7 +83,7 @@ func parseAuthInfo(h http.Header) (authInfo, error) {
 	}
 
 	value := values[0][len("DIGEST "):]
-	
+
 	tokens := strings.Split(value, ",")
 	tokenMap := make(map[string]string)
 
@@ -130,10 +130,10 @@ func parseAuthInfo(h http.Header) (authInfo, error) {
 
 	result := authInfo{
 		algorithm: algorithm,
-		realm: realm,
-		nonce: nonce,
-		qop: qop,
-		opaque: opaque,
+		realm:     realm,
+		nonce:     nonce,
+		qop:       qop,
+		opaque:    opaque,
 	}
 
 	return result, nil
@@ -145,7 +145,7 @@ func calculateAuthValues(req *http.Request, d *DigestTransport, ai authInfo) aut
 	response := computeResponse(ha1, ha2, ai.nonce)
 
 	return authData{
-		info: ai,
+		info:     ai,
 		response: response,
 	}
 }
