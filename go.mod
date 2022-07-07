@@ -1,3 +1,3 @@
-module github.com/ignusin/http-digest-auth-go
+module github.com/ignusin/httpdigest-go
 
 go 1.18
