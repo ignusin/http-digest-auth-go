@@ -13,8 +13,18 @@ const (
 	wwwAuthenticateHeader = "WWW-Authenticate"
 	algorithmMD5          = "MD5"
 	qopAuth               = "AUTH"
+	digestAuthPrefix      = "Digest"
+
+	tokenAlgorithm = "ALGORITHM"
+	tokenRealm     = "REALM"
+	tokenNonce     = "NONCE"
+	tokenOpaque    = "OPAQUE"
+	tokenQop       = "QOP"
+
+	headerTemplate = "Digest username=\"%s\", realm=\"%s\", nonce=\"%s\", uri=\"%s\",response=\"%s\""
 )
 
+// DigestTransport is the RoundTripper transport with support of HTTP Digest authentication.
 type DigestTransport struct {
 	username  string
 	password  string
@@ -35,6 +45,7 @@ type authInfo struct {
 	qop       string
 }
 
+// NewDigestTransport constructs new instance of DigestTransport.
 func NewDigestTransport(username, password string,
 	transport http.RoundTripper) *DigestTransport {
 
@@ -45,6 +56,7 @@ func NewDigestTransport(username, password string,
 	}
 }
 
+// RoundTrip is the implementation of RoundTripper interface for DigestTransport.
 func (d *DigestTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	authReq := *req
 
@@ -82,7 +94,7 @@ func parseAuthInfo(h http.Header) (authInfo, error) {
 		return authInfo{}, fmt.Errorf("could not find %s header", wwwAuthenticateHeader)
 	}
 
-	value := values[0][len("DIGEST "):]
+	value := values[0][len(digestAuthPrefix):]
 
 	tokens := strings.Split(value, ",")
 	tokenMap := make(map[string]string)
@@ -99,29 +111,29 @@ func parseAuthInfo(h http.Header) (authInfo, error) {
 		tokenMap[tokenKey] = tokenValue
 	}
 
-	algorithm, ok := tokenMap["ALGORITHM"]
+	algorithm, ok := tokenMap[tokenAlgorithm]
 	if ok && strings.ToUpper(algorithm) != algorithmMD5 {
 		return authInfo{}, fmt.Errorf("not supported algorithm %s", algorithm)
 	} else {
 		algorithm = algorithmMD5
 	}
 
-	realm, ok := tokenMap["REALM"]
+	realm, ok := tokenMap[tokenRealm]
 	if !ok {
 		return authInfo{}, errors.New("no realm specified")
 	}
 
-	nonce, ok := tokenMap["NONCE"]
+	nonce, ok := tokenMap[tokenNonce]
 	if !ok {
 		return authInfo{}, errors.New("no nonce specified")
 	}
 
-	opaque, ok := tokenMap["OPAQUE"]
+	opaque, ok := tokenMap[tokenOpaque]
 	if !ok {
 		return authInfo{}, errors.New("no opaque specified")
 	}
 
-	qop, ok := tokenMap["QOP"]
+	qop, ok := tokenMap[tokenQop]
 	if !ok {
 		return authInfo{}, errors.New("no qop specified")
 	} else if strings.ToUpper(qop) != qopAuth {
@@ -181,7 +193,6 @@ func assignAuthHeaders(req *http.Request, d *DigestTransport) {
 		return
 	}
 
-	headerTemplate := "Digest username=\"%s\", realm=\"%s\", nonce=\"%s\", uri=\"%s\",response=\"%s\""
 	header := fmt.Sprintf(headerTemplate, d.username, d.authData.info.realm,
 		d.authData.info.nonce, req.URL.Path, d.authData.response)
 
