@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"strings"
 )
@@ -71,7 +72,8 @@ func (d *DigestTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		}
 
 		if authResp.Body != nil {
-			defer authResp.Body.Close()
+			ioutil.ReadAll(authResp.Body)
+			authResp.Body.Close()
 		}
 
 		authInfo, err := parseAuthInfo(authResp.Header)
