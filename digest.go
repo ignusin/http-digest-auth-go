@@ -1,11 +1,12 @@
 package httpdigest
 
 import (
+	"bytes"
 	"crypto/md5"
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"strings"
 )
@@ -59,7 +60,15 @@ func NewDigestTransport(username, password string,
 
 // RoundTrip is the implementation of RoundTripper interface for DigestTransport.
 func (d *DigestTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	bodyBuffer := bytes.NewBuffer(make([]byte, 0))
+	if req.Body != nil {
+		bodyBuffer.ReadFrom(req.Body)
+	}
+
+	body := bodyBuffer.Bytes()
+
 	authReq := *req
+	authReq.Body = io.NopCloser(bytes.NewBuffer(body))
 
 	if d.authData == nil {
 		authResp, err := d.transport.RoundTrip(&authReq)
@@ -72,8 +81,7 @@ func (d *DigestTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		}
 
 		if authResp.Body != nil {
-			ioutil.ReadAll(authResp.Body)
-			authResp.Body.Close()
+			defer authResp.Body.Close()
 		}
 
 		authInfo, err := parseAuthInfo(authResp.Header)
@@ -86,6 +94,7 @@ func (d *DigestTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 
 	assignAuthHeaders(req, d)
+	req.Body = io.NopCloser(bytes.NewBuffer(body))
 
 	return d.transport.RoundTrip(req)
 }
